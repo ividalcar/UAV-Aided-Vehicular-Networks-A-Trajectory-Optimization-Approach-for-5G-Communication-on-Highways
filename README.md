@@ -2,7 +2,7 @@
 
 IEEE Latin America Transactions  
 
-Manuscript ID: [to be assigned]
+Manuscript ID:
 
 **Authors**
 - Ignacio Vidal  
