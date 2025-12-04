@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- Definir tipos de vehículo -->
+    <vType id="Auto" vClass="passenger" maxSpeed="20"/>
+
+
+    <!-- Definir rutas -->
+    <route id="r_0" edges="153180751 201283198 476297344 476297343"/>
+    <route id="r_1" edges="153180753 201283198 476297344 476297343"/>
+    <route id="r_2" edges="145354574 476297343"/>
+
+    <!-- Flujos con una distribución de Poisson -->
+    <!-- Intervalo 0-50 segundos -->
+    <flow id="poissonFlow_r2_1" type="Auto" route="r_2" begin="0" end="160" period="exp(1.2)" departLane="random" departSpeed="max"/>
+    <flow id="poissonFlow_r1_1" type="Auto" route="r_1" begin="0" end="160" period="exp(0.35)" departLane="random" departSpeed="max"/>
+    <flow id="poissonFlow_r0_1" type="Auto" route="r_0" begin="0" end="160" period="exp(0.35)" departLane="random" departSpeed="max"/>
+</routes>
