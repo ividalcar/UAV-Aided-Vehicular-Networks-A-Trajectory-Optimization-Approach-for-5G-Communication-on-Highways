@@ -1334,40 +1334,6 @@ ylabel('Densidad vehicular total (vehículos/km/carril)');
 title('Evolución de la densidad vehicular total en la simulación');
 grid on;
 
-
-%% Nuevos plot
-
-% Crear figura
-figure;
-hold on;
-
-% Colores y estilos
-color_gris = [0.85 0.85 0.85];  % Gris claro
-lsize = 1.5;                    % Tamaño de línea
-
-% Graficar cada línea individual del SNR por vehículo (columnas de SNRs_Movil)
-[num_steps, num_vehiculos] = size(SNRs_Movil);
-for k = 1:num_vehiculos
-    plot(0:length(promedio_bler_movil)-1, SNRs_Movil(:,k), '-', 'Color', color_gris, 'LineWidth', 1);
-end
-
-% Graficar la línea promedio más destacada
-plot(0:length(promedio_bler_movil)-1, promedio_snr_movil, '-', ...
-    'MarkerSize', 7, 'LineWidth', lsize, 'Color', [0 0.4470 0.7410]);
-
-% Ajuste de ejes
-current_ylim = ylim;
-ylim([current_ylim(1), current_ylim(2) * 1.25]);
-
-% Etiquetas y leyenda
-xlabel('Time (s)');
-ylabel('Average SNR (dB)');
-grid on;
-legend('UAV1: mobile', 'Location', 'northeast');
-
-hold off;
-
-
 %% Local Functions
 function validateNumLayers(simParameters)
 numlayers = simParameters.PDSCH.NumLayers;
@@ -1459,4 +1425,5 @@ if paddingSize(1) > 0
 else
     paddedArray = array;
 end
+
 end
