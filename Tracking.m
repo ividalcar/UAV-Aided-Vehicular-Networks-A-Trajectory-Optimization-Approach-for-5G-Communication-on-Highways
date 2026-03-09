@@ -6,9 +6,9 @@ close all
 % SUMO parameters
 
 num_iterations = 1;
-snr_all_iterations = cell(num_iterations, 3);
-bler_all_iterations = cell(num_iterations, 3);
-throughput_all_iterations = cell(num_iterations, 3);
+snr_all_iterations = cell(num_iterations, 4);
+bler_all_iterations = cell(num_iterations, 4);
+throughput_all_iterations = cell(num_iterations, 4);
 
 
 % "divisor" es una variable por la cual se dividen las velocidades de los UAVs, relacionada
@@ -65,49 +65,63 @@ for iter = 1:num_iterations
     %Parámetros del dron móvil
     Vel_dron = 0;
     acel_max = 2.5/divisor;
-    Vel_max = 23/divisor;
+    Vel_max = 22/divisor;
     if acel_max == 0
         Vel_dron = 22;
     end
 
+    % Crear el Dron Móvil como POI en la simulación
+    poiID_Cen = 'Dron_Centroide';
+    traci.poi.add(poiID_Cen, pos_inicialY, pos_inicialX, [126, 47, 142, 255], 'Circle', 10);
     % Solo para el caso que se requiera Tracking (1 vehículo en la simulación)
 
     mov = 11.5/divisor; % Movimiento constante del vehículo en x, en y es *1.5; 12 = 21.6
     % Determinar si el dron está siguiendo al auto
     siguiendo_auto = false;
+    Vel_dron_Cen = 0;              % velocidad del dron centroide
+    siguiendo_auto_cen = false;    % flag propio para el centroide
+    umbral_seguimiento = 20;       % mismo umbral que usas
     tiempo = 1;
 
     % Initializing the metrics variables
     % Inicializar matrices y celdas para almacenar datos de la simulación
     pos3D_history_Predefinido = [];
     pos3D_history_Movil = [];
+    pos3D_history_Cen = [];
     pos3D_history_vehiculos = cell(1, num_autos);
     SNRs_Predefinido = [];
     SNRs_Fijo = [];
     SNRs_Movil = [];
+    SNRs_Cen = [];
+    Signal_Movil = [];
+    Noise_Movil  = [];
     bler_movil = cell(1,num_autos);
     bler_fijo = cell(1,num_autos);
     bler_predefinido = cell(1,num_autos);
+    bler_cen = cell(1,num_autos);
     simThroughput_vehiculos_Predefinido = cell(1, num_autos);
     maxThroughput_vehiculos_Predefinido = cell(1,num_autos);
     simThroughput_vehiculos_Fijo = cell(1, num_autos);
     maxThroughput_vehiculos_Fijo = cell(1,num_autos);
     simThroughput_vehiculos_Movil = cell(1, num_autos);
     maxThroughput_vehiculos_Movil = cell(1,num_autos);
-    SNR_vehiculos_Predefinido = cell(num_autos, 1);
+    simThroughput_vehiculos_Cen = cell(1, num_autos);
+    maxThroughput_vehiculos_Cen = cell(1,num_autos);
     throughput_vehiculos_Predefinido = cell(num_autos, 1);
-    SNR_vehiculos_Fijo = cell(num_autos, 1);
     throughput_vehiculos_Fijo = cell(num_autos, 1);
-    SNR_vehiculos_Movil = cell(num_autos, 1);
     throughput_vehiculos_Movil = cell(num_autos, 1);
+    throughput_vehiculos_Cen = cell(num_autos, 1);
     promedioSNR_Predefinido = [];
     promedioSNR_Fijo = [];
     promedioSNR_Movil = [];
-
+    promedioSNR_Cen = [];
+    promedioSignal_Movil = [];
+    promedioNoise_Movil  = [];
     for i = 1:num_autos
         throughput_vehiculos_Predefinido{i} = [];
         throughput_vehiculos_Fijo{i} = [];
         throughput_vehiculos_Movil{i} = [];
+        throughput_vehiculos_Cen{i} = [];
         bler_movil{i}=[];
         bler_fijo{i}=[];
         bler_predefinido{i}=[];
@@ -117,26 +131,28 @@ for iter = 1:num_iterations
         maxThroughput_vehiculos_Fijo{i} = [];
         simThroughput_vehiculos_Movil{i} = [];
         maxThroughput_vehiculos_Movil{i} = [];
+        simThroughput_vehiculos_Cen{i} = [];
+        maxThroughput_vehiculos_Cen{i} = [];
     end
 
     % Initializing the communications system
     %% Creación del sistema de comunicación
     simParameters = struct();
-    simParameters.NFrames = 1;                                % Número de 10 ms Frames
+    simParameters.NFrames = 50;                                % Número de 10 ms Frames
     simParameters.PerfectChannelEstimator = true;             % Estimación y sincronización del canal perfectas, si es false se basa en la señal DM-RS recibida en el PDSCH
     simParameters.DisplaySimulationInformation = true;        % Muestra info HARQ
     simParameters.DisplayDiagnostics = false;                 % Grafica los gráficos de EVM (error vector magnitude) por capa, muestra EVM de capa por slot (tiempo) y bloque de recursos (frec)
     simParameters.Carrier = nrCarrierConfig;                  % Configuración de la cuadrícula de recursos (nr en este caso)
-    simParameters.Carrier.NSizeGrid = 51;                     % BW en bloques de recursos (51 RBs a 30 kHz en el espaciado de subportadoras (SCS) para 20 MHz BW)
-    simParameters.Carrier.SubcarrierSpacing = 30;             % 15, 30, 50, 120 kHz
+    simParameters.Carrier.NSizeGrid = 32;                     % BW en bloques de recursos (32 RBs a 120 kHz en el espaciado de subportadoras (SCS) para 50 MHz BW)
+    simParameters.Carrier.SubcarrierSpacing = 120;             % 15, 30, 50, 120 kHz
     simParameters.Carrier.CyclicPrefix = 'Normal';            % 'Normal' o 'Extended' (este es importante solo para 60 kHz SCS)
     simParameters.Carrier.NCellID = 1;                        % Identificación de la celda
-    simParameters.CarrierFrequency = 5.9e9;                   % Frecuencia de la carrier 700e6 en 36.777
+    simParameters.CarrierFrequency = 26e9;                  
     simParameters.TxHeight = 100;                             % Altura de los drones (m)
-    simParameters.TxPower = 5;                               % Potencia transmitida (dBm) En el doc 36.777 dice que son46 dBm
+    simParameters.TxPower = 25;                               % Potencia transmitida (dBm) 
     simParameters.RxHeight = 1.5;                             % Altura del receptor (m)
-    simParameters.RxNoiseFigure = 7;                          % Figura de ruido del receptor (dB) 6, 9 el doc
-    simParameters.RxAntTemperature = 300;                     % Temperatura de la antena receptora (K)
+    simParameters.RxNoiseFigure = 9;                          % Figura de ruido del receptor (dB)
+    simParameters.RxAntTemperature = 290;                     % Temperatura de la antena receptora (K)
     simParameters.PathLossModel = '5G-NR';                    % '5G-NR' o 'fspl'
     simParameters.PathLoss = nrPathLossConfig;
     simParameters.PathLoss.Scenario = 'RMa';                  % Rural macrocell
@@ -300,8 +316,13 @@ for iter = 1:num_iterations
                 pos2D_dron_Movil = traci.poi.getPosition(poiID_Movil);
                 posX_dron_Movil = pos2D_dron_Movil(1);
                 posY_dron_Movil = pos2D_dron_Movil(2);
-
                 pos3D_history_Movil = [pos3D_history_Movil; posX_dron_Movil, posY_dron_Movil, simParameters.TxHeight];
+            end
+            if ismember(poiID_Cen, traci.poi.getIDList())
+                pos2D_dron_Cen = traci.poi.getPosition(poiID_Cen);
+                posX_dron_Cen = pos2D_dron_Cen(1);
+                posY_dron_Cen = pos2D_dron_Cen(2);
+                pos3D_history_Cen = [pos3D_history_Cen; posX_dron_Cen, posY_dron_Cen, simParameters.TxHeight];
             end
 
             % Inicia una matriz para almacenar las posiciones de recepción de
@@ -863,6 +884,308 @@ for iter = 1:num_iterations
                         end
                     end
                 end
+
+                if ismember(poiID_Cen, traci.poi.getIDList())  % Si está el dron móvil
+                    stepSNRs_Cen = NaN(1, size(rxPositions, 2));  % Inicializa el array para almacenar los valores de SNR
+                    for i = 1:size(rxPositions, 2)
+                        if all(~isnan(rxPositions(:, i)))  % Verifica que no haya posiciones NaN en los receptores
+                            txPosition = [posX_dron_Cen; posY_dron_Cen; simParameters.TxHeight];  % Define la posición del transmisor
+                            rxPosition = rxPositions(:, i);  % Define la posición del receptor
+                            % Calcula la pérdida de trayectoria (path loss) usando la configuración del simulador
+                            pathLoss = nrPathLoss(simParameters.PathLoss, simParameters.CarrierFrequency, simParameters.LOS, txPosition, rxPosition);
+                            kBoltz = physconst('Boltzmann');  % Constante de Boltzmann
+                            NF = 10^(simParameters.RxNoiseFigure / 10);  % Factor de ruido adimensional
+                            Teq = simParameters.RxAntTemperature + 290 * (NF - 1);  % Ruido de temperatura
+                            % Amplitud del ruido de la antena receptora
+                            N0 = sqrt(kBoltz * waveformInfo.SampleRate * Teq / 2.0);
+                            % Ocupación de FFT basada en el tamaño de la cuadrícula de recursos OFDM
+                            fftOccupancy = 12 * simParameters.Carrier.NSizeGrid / waveformInfo.Nfft;
+                            % Cálculo del SNR resultante
+                            simParameters.SNRIn = (simParameters.TxPower - 30) - pathLoss - 10 * log10(fftOccupancy) - 10 * log10(2 * N0^2);
+                            stepSNRs_Cen(i) = simParameters.SNRIn;  % Almacena el valor del SNR calculado
+                        end
+                    end
+                    % Almacena los SNRs obtenidos y calcula el promedio
+                    if size(SNRs_Cen, 2) == size(stepSNRs_Cen, 2)
+                        SNRs_Cen = [SNRs_Cen; stepSNRs_Cen];
+                    else
+                        diff_size = size(SNRs_Cen, 2) - size(stepSNRs_Cen, 2);
+                        if diff_size > 0
+                            stepSNRs_Cen = padarray(stepSNRs_Cen, [0, diff_size], NaN, 'post');
+                        else
+                            SNRs_Cen = padarray(SNRs_Cen, [0, -diff_size], NaN, 'post');
+                        end
+                        SNRs_Cen = [SNRs_Cen; stepSNRs_Cen];
+                    end
+                    promedioSNR_Cen = [promedioSNR_Cen, nanmean(stepSNRs_Cen)];
+                    % Procesa los SNRs para cada vehículo
+                    parfor i = 1:length(carsInSim)
+                        if ismember(vehicleID, carsInSim)
+                            if ~isnan(stepSNRs_Cen(i))
+                                SNRdB = stepSNRs_Cen(i);  % SNR en dB
+                                rng('shuffle');  % Inicia la semilla del generador de números aleatorios
+                                % Configuración de las variables del portador, PDSCH y HARQ
+                                carrier = simParameters.Carrier;
+                                pdsch = simParameters.PDSCH;
+                                pdschextra = simParameters.PDSCHExtension;
+                                decodeDLSCHLocal = decodeDLSCH;
+                                decodeDLSCHLocal.reset();
+                                pathFilters = [];
+
+                                % Número total de slots en la simulación
+                                NSlots = simParameters.NFrames * carrier.SlotsPerFrame;
+                                trBlk = []; % Inicializa como un arreglo vacío
+                                % Obtención de la estimación inicial del canal
+                                estChannelGridAnts = getInitialChannelEstimate(carrier, simParameters.NTxAnts, channel, simParameters.DataType);
+                                % Cálculo de los nuevos pre-codificadores
+                                newWtx = hSVDPrecoders(carrier, pdsch, estChannelGridAnts, pdschextra.PRGBundleSize);
+                                offset = 0;
+                                simThroughput = 0;  % Inicializa el throughput simulado
+                                maxThroughput = 0;
+                                err_Cen = 0;
+                                harqSequence = 0:pdschextra.NHARQProcesses-1;
+                                harqEntity = HARQEntity(harqSequence, rvSeq, pdsch.NumCodewords);
+
+                                % Itera sobre cada slot de la simulación
+                                for nslot = 0:NSlots-1
+                                    carrier.NSlot = nslot;  % Configura el slot actual del portador
+                                    % Obtención de índices PDSCH
+                                    [pdschIndices, pdschIndicesInfo] = nrPDSCHIndices(carrier, pdsch);
+                                    % Cálculo de los tamaños de los bloques de transporte (TBS)
+                                    trBlkSizes = nrTBS(pdsch.Modulation, pdsch.NumLayers, numel(pdsch.PRBSet), pdschIndicesInfo.NREPerPRB, pdschextra.TargetCodeRate, pdschextra.XOverhead);
+
+                                    % Itera sobre cada codeword
+                                    for cwIdx = 1:pdsch.NumCodewords
+                                        % Si hay nuevos datos para la codeword
+                                        if harqEntity.NewData(cwIdx)
+                                            % Genera un TBS aleatorio
+                                            trBlk = randi([0 1], trBlkSizes(cwIdx), 1);
+                                            % Configura el bloque de transporte en el codificador DLSCH
+                                            setTransportBlock(encodeDLSCH, trBlk, cwIdx-1, harqEntity.HARQProcessID);
+                                            % Si el temporizador de HARQ ha expirado, reinicia el buffer suave
+                                            if harqEntity.SequenceTimeout(cwIdx)
+                                                resetSoftBuffer(decodeDLSCHLocal, cwIdx-1, harqEntity.HARQProcessID);
+                                            end
+                                        end
+                                    end
+
+                                    % Codifica los bloques de transporte
+                                    codedTrBlocks = encodeDLSCH(pdsch.Modulation, pdsch.NumLayers, pdschIndicesInfo.G, harqEntity.RedundancyVersion, harqEntity.HARQProcessID);
+                                    wtx = newWtx;  % Pre-codifica las señales PDSCH
+                                    pdschGrid = nrResourceGrid(carrier, simParameters.NTxAnts, 'OutputDataType', simParameters.DataType);
+                                    pdschSymbols = nrPDSCH(carrier, pdsch, codedTrBlocks);
+                                    % Pre-codifica y asigna las señales a la cuadrícula PDSCH
+                                    [pdschAntSymbols, pdschAntIndices] = nrPDSCHPrecode(carrier, pdschSymbols, pdschIndices, wtx);
+                                    pdschGrid(pdschAntIndices) = pdschAntSymbols;
+
+                                    % Genera y pre-codifica las señales DM-RS
+                                    dmrsSymbols = nrPDSCHDMRS(carrier, pdsch);
+                                    dmrsIndices = nrPDSCHDMRSIndices(carrier, pdsch);
+                                    [dmrsAntSymbols, dmrsAntIndices] = nrPDSCHPrecode(carrier, dmrsSymbols, dmrsIndices, wtx);
+                                    pdschGrid(dmrsAntIndices) = dmrsAntSymbols;
+
+                                    % Genera y pre-codifica las señales PT-RS
+                                    ptrsSymbols = nrPDSCHPTRS(carrier, pdsch);
+                                    ptrsIndices = nrPDSCHPTRSIndices(carrier, pdsch);
+                                    [ptrsAntSymbols, ptrsAntIndices] = nrPDSCHPrecode(carrier, ptrsSymbols, ptrsIndices, wtx);
+                                    pdschGrid(ptrsAntIndices) = ptrsAntSymbols;
+
+                                    % Realiza la modulación OFDM
+                                    txWaveform = nrOFDMModulate(carrier, pdschGrid);
+                                    txWaveform = [txWaveform; zeros(maxChDelay, size(txWaveform, 2))];
+                                    % Pasa la señal a través del canal y obtiene la forma de onda recibida
+                                    [rxWaveform, pathGains, sampleTimes] = channel(txWaveform);
+                                    SNR = 10^(SNRdB / 10);  % Convierte el SNR de dB a lineal
+                                    % Calcula el ruido AWGN
+                                    N0 = 1 / sqrt(simParameters.NRxAnts * double(waveformInfo.Nfft) * SNR);
+                                    noise = N0 * randn(size(rxWaveform), "like", rxWaveform);
+                                    rxWaveform = rxWaveform + noise;
+
+                                    % Estimación perfecta del canal
+                                    if simParameters.PerfectChannelEstimator
+                                        pathFilters = getPathFilters(channel);
+                                        [offset, mag] = nrPerfectTimingEstimate(pathGains, pathFilters);
+                                    else  % Estimación práctica del canal
+                                        [t, mag] = nrTimingEstimate(carrier, rxWaveform, dmrsIndices, dmrsSymbols);
+                                        offset = hSkipWeakTimingOffset(offset, t, mag);
+                                        if offset > maxChDelay
+                                            warning(['Estimated timing offset (%d) is greater than the maximum channel delay (%d).' ...
+                                                ' This will result in a decoding failure. This may be caused by low SNR,' ...
+                                                ' or not enough DM-RS symbols to synchronize successfully.'], offset, maxChDelay);
+                                        end
+                                    end
+
+                                    % Ajusta la señal recibida según el desfase estimado
+                                    rxWaveform = rxWaveform(1 + offset:end, :);
+                                    % Realiza la demodulación OFDM de la señal recibida
+                                    rxGrid = nrOFDMDemodulate(carrier, rxWaveform);
+                                    % Obtiene las dimensiones de la cuadrícula de recursos recibida
+                                    [K, L, R] = size(rxGrid);
+
+                                    % Si el número de símbolos en la cuadrícula es menor que los símbolos por slot, completa con ceros
+                                    if L < carrier.SymbolsPerSlot
+                                        rxGrid = cat(2, rxGrid, zeros(K, carrier.SymbolsPerSlot - L, R));
+                                    end
+
+                                    % Estimación del canal utilizando la estimación perfecta si está habilitada
+                                    if simParameters.PerfectChannelEstimator
+                                        estChannelGridAnts = nrPerfectChannelEstimate(carrier, pathGains, pathFilters, offset, sampleTimes);
+                                        noiseGrid = nrOFDMDemodulate(carrier, noise(1 + offset:end, :));
+                                        noiseEst = var(noiseGrid(:));
+                                        % Extrae los recursos PDSCH y la estimación del canal
+                                        [pdschRx, pdschHest, ~, pdschHestIndices] = nrExtractResources(pdschIndices, rxGrid, estChannelGridAnts);
+                                        pdschHest = nrPDSCHPrecode(carrier, pdschHest, pdschHestIndices, permute(wtx, [2 1 3]));
+                                    else  % Estimación práctica del canal usando subbandas
+                                        [estChannelGridPorts, noiseEst] = hSubbandChannelEstimate(carrier, rxGrid, dmrsIndices, dmrsSymbols, pdschextra.PRGBundleSize, 'CDMLengths', pdsch.DMRS.CDMLengths);
+                                        noiseEst = mean(noiseEst, 'all');
+                                        [pdschRx, pdschHest] = nrExtractResources(pdschIndices, rxGrid, estChannelGridPorts);
+                                        estChannelGridAnts = precodeChannelEstimate(carrier, estChannelGridPorts, conj(wtx));
+                                    end
+
+                                    % Igualación MMSE de las señales PDSCH (Minimum Mean Square Error)
+                                    [pdschEq, csi] = nrEqualizeMMSE(pdschRx, pdschHest, noiseEst);
+
+                                    % Compensación de fase común (CPE) si existen PTRS
+                                    if ~isempty(ptrsIndices)
+                                        tempGrid = nrResourceGrid(carrier, pdsch.NumLayers);
+                                        [ptrsRx, ptrsHest, ~, ~, ptrsHestIndices, ptrsLayerIndices] = nrExtractResources(ptrsIndices, rxGrid, estChannelGridAnts, tempGrid);
+                                        ptrsHest = nrPDSCHPrecode(carrier, ptrsHest, ptrsHestIndices, permute(wtx, [2 1 3]));
+                                        ptrsEq = nrEqualizeMMSE(ptrsRx, ptrsHest, noiseEst);
+                                        tempGrid(ptrsLayerIndices) = ptrsEq;
+                                        cpe = nrChannelEstimate(tempGrid, ptrsIndices, ptrsSymbols);  % Estimación de la fase común (CPE)
+                                        cpe = angle(sum(cpe, [1 3 4]));
+                                        tempGrid(pdschIndices) = pdschEq;
+                                        symLoc = pdschIndicesInfo.PTRSSymbolSet(1) + 1:pdschIndicesInfo.PTRSSymbolSet(end) + 1;
+                                        tempGrid(:, symLoc, :) = tempGrid(:, symLoc, :) .* exp(-1i * cpe(symLoc));
+                                        pdschEq = tempGrid(pdschIndices);
+                                    end
+
+                                    % Decodificación PDSCH y obtención de los LLRs del DLSCH
+                                    [dlschLLRs, rxSymbols] = nrPDSCHDecode(carrier, pdsch, pdschEq, noiseEst);
+
+                                    % Visualización de diagnósticos: Muestra el EVM por capa si está habilitado
+                                    if simParameters.DisplayDiagnostics
+                                        plotLayerEVM(NSlots, nslot, pdsch, size(pdschGrid), pdschIndices, pdschSymbols, pdschEq);
+                                    end
+
+                                    % Desempaqueta el CSI y aplica la ponderación a los LLRs del DLSCH
+                                    csi = nrLayerDemap(csi);
+                                    for cwIdx = 1:pdsch.NumCodewords
+                                        Qm = length(dlschLLRs{cwIdx}) / length(rxSymbols{cwIdx});
+                                        csi{cwIdx} = repmat(csi{cwIdx}.', Qm, 1);
+                                        dlschLLRs{cwIdx} = dlschLLRs{cwIdx} .* csi{cwIdx}(:);
+                                    end
+
+                                    % Configura la longitud del bloque de transporte y decodifica el DLSCH
+                                    decodeDLSCHLocal.TransportBlockLength = trBlkSizes;
+                                    [decbits, blkerr] = decodeDLSCHLocal(dlschLLRs, pdsch.Modulation, pdsch.NumLayers, harqEntity.RedundancyVersion, harqEntity.HARQProcessID);
+
+                                    % Actualiza el throughput simulado y el throughput máximo posible
+                                    simThroughput = simThroughput + sum(~blkerr .* trBlkSizes);
+                                    maxThroughput = maxThroughput + sum(trBlkSizes);
+                                    err_Cen = err_Cen + (~isequal(decbits,trBlk));
+                                    % Actualiza el estado del proceso HARQ y muestra información de la simulación
+                                    procstatus = updateAndAdvance(harqEntity, blkerr, trBlkSizes, pdschIndicesInfo.G);
+                                    newWtx = hSVDPrecoders(carrier, pdsch, estChannelGridAnts, pdschextra.PRGBundleSize);
+                                end
+
+                                % Calcula el porcentaje de throughput alcanzado y lo almacena
+                                throughputPercentage = simThroughput * 100 / maxThroughput;
+                                throughput_vehiculos_Cen{i} = [throughput_vehiculos_Cen{i}; throughputPercentage];
+                                simThroughput_vehiculos_Cen{i} = [simThroughput_vehiculos_Cen{i}; simThroughput];
+                                maxThroughput_vehiculos_Cen{i} = [maxThroughput_vehiculos_Cen{i}; maxThroughput];
+
+                                bler_cen1 = err_Cen/NSlots;
+                                bler_cen{i} = [bler_cen{i}; bler_cen1];
+
+                            end
+                        else
+                            % Si el vehículo no está en el mapa, asignar NaN
+                            throughput_vehiculos_Cen{i} = [throughput_vehiculos_Cen{i}; NaN];
+                            maxThroughput_vehiculos_Cen{i} = [maxThroughput_vehiculos_Cen{i}; NaN];
+                            simThroughput_vehiculos_Cen{i} = [simThroughput_vehiculos_Cen{i}; NaN];
+                            bler_cen{i} = [bler_cen{i}; NaN];
+                        end
+                    end
+                end
+                %% Movimiento del dron Centroide
+                % Restricciones: aceleracion discreta + resolucion angular
+                
+                % 1) Centroide de vehiculos presentes
+                valid = ~isnan(rxPositions(1,:)) & ~isnan(rxPositions(2,:));
+                if any(valid)
+                    centroidX = mean(rxPositions(1,valid));
+                    centroidY = mean(rxPositions(2,valid));
+                else
+                    centroidX = posX_dron_Cen;
+                    centroidY = posY_dron_Cen;
+                end
+
+                % 2) Explorar acciones posibles (igual al movil, pero con su propio score)
+                num_aceleraciones_cen = 5;
+                posible_dir_cen = 36;                
+                resolucion_ang_cen = 2*pi/posible_dir_cen;
+                ang_cen = 0:resolucion_ang_cen:(2*pi - resolucion_ang_cen);
+
+                posX2_cen = zeros(posible_dir_cen, num_aceleraciones_cen);
+                posY2_cen = zeros(posible_dir_cen, num_aceleraciones_cen);
+
+                score_cen = -inf(posible_dir_cen, num_aceleraciones_cen);   % maximizar
+                acel_cen = linspace(-acel_max, acel_max, num_aceleraciones_cen);
+
+                for k = 1:posible_dir_cen
+                    for a = 1:num_aceleraciones_cen
+
+                        Vel_nueva_cen = min(Vel_max, Vel_dron_Cen + acel_cen(a)*tiempo);
+
+                        disX = Vel_nueva_cen*tiempo*cos(ang_cen(k)) + 0.5*acel_cen(a)*tiempo^2*cos(ang_cen(k));
+                        disY = Vel_nueva_cen*tiempo*sin(ang_cen(k)) + 0.5*acel_cen(a)*tiempo^2*sin(ang_cen(k));
+
+                        posX2_cen(k,a) = posX_dron_Cen + disX;
+                        posY2_cen(k,a) = posY_dron_Cen + disY;
+
+                        dist = sqrt((posX2_cen(k,a) - centroidX)^2 + (posY2_cen(k,a) - centroidY)^2);
+                        score_cen(k,a) = -dist;
+                    end
+                end
+
+                % 3) Seleccionar la mejor accion (para ir al centroide)
+                [~, idxC] = max(score_cen(:));
+                [bestDirC, bestAccC] = ind2sub(size(score_cen), idxC);
+
+                % 4) Movimiento final, con modo "siguiendo" igual al movil
+                if ~siguiendo_auto_cen
+                    % ir hacia el centroide con restricciones
+                    Vel_dron_Cen = min(Vel_max, Vel_dron_Cen + acel_cen(bestAccC)*tiempo);
+                    nueva_posX_cen = posX2_cen(bestDirC, bestAccC);
+                    nueva_posY_cen = posY2_cen(bestDirC, bestAccC);
+                else
+                    % seguir al auto (misma logica que tu movil)
+                    if ~isnan(rxPositions(1,1)) && ~isnan(rxPositions(2,1))
+                        nueva_posX_cen = rxPositions(1,1) + mov*1.5;
+                        nueva_posY_cen = rxPositions(2,1) + mov;
+                    else
+                        % si el auto no esta, mantente
+                        nueva_posX_cen = posX_dron_Cen;
+                        nueva_posY_cen = posY_dron_Cen;
+                    end
+                end
+
+                % 5) Mover POI y actualizar estado
+                traci.poi.setPosition(poiID_Cen, nueva_posX_cen, nueva_posY_cen);
+                posX_dron_Cen = nueva_posX_cen;
+                posY_dron_Cen = nueva_posY_cen;
+
+                % 6) Activar modo "siguiendo" cuando esta lo suficientemente cerca
+                if ~siguiendo_auto_cen
+                    if ~isnan(rxPositions(1,1)) && ~isnan(rxPositions(2,1))
+                        distancia_al_auto_cen = sqrt((posX_dron_Cen - rxPositions(1,1))^2 + (posY_dron_Cen - rxPositions(2,1))^2);
+                        if distancia_al_auto_cen < 20
+                            siguiendo_auto_cen = true;
+                        end
+                    end
+                end
+
                 %% Movimiento del dron predefinido
                 siguiente_posicion = posicion_actual + direccion;
                 % Verificar si llegó al final de la secuencia de posiciones
@@ -975,7 +1298,6 @@ for iter = 1:num_iterations
         end
     end
 
-
     traci.close();  % Cerrar la conexión con SUMO
     % Ajustar la longitud de las matrices de datos para cada vehículo
     maxSteps = max([length(promedioSNR_Predefinido), length(promedioSNR_Fijo), length(promedioSNR_Movil)]);
@@ -987,36 +1309,22 @@ for iter = 1:num_iterations
         SNRs_Predefinido(:, i) = padWithNaN(SNRs_Predefinido(:, i), [maxSteps, 1]);
         SNRs_Fijo(:, i) = padWithNaN(SNRs_Fijo(:, i), [maxSteps, 1]);
         SNRs_Movil(:, i) = padWithNaN(SNRs_Movil(:, i), [maxSteps, 1]);
+        SNRs_Cen(:, i) = padWithNaN(SNRs_Cen(:, i), [maxSteps, 1]);
 
         simThroughput_vehiculos_Predefinido{i} = padWithNaN(simThroughput_vehiculos_Predefinido{i}', [maxSteps, 1])';
         simThroughput_vehiculos_Fijo{i} = padWithNaN(simThroughput_vehiculos_Fijo{i}', [maxSteps, 1])';
         simThroughput_vehiculos_Movil{i} = padWithNaN(simThroughput_vehiculos_Movil{i}', [maxSteps, 1])';
+        simThroughput_vehiculos_Cen{i} = padWithNaN(simThroughput_vehiculos_Cen{i}', [maxSteps, 1])';
 
         maxThroughput_vehiculos_Predefinido{i} = padWithNaN(maxThroughput_vehiculos_Predefinido{i}', [maxSteps, 1])';
         maxThroughput_vehiculos_Fijo{i} = padWithNaN(maxThroughput_vehiculos_Fijo{i}', [maxSteps, 1])';
         maxThroughput_vehiculos_Movil{i} = padWithNaN(maxThroughput_vehiculos_Movil{i}', [maxSteps, 1])';
+        maxThroughput_vehiculos_Cen{i} = padWithNaN(maxThroughput_vehiculos_Cen{i}', [maxSteps, 1])';
     end
 
     % Ajustar la longitud de las matrices de datos para cada vehículo
-    maxSteps = max([length(promedioSNR_Predefinido), length(promedioSNR_Fijo), length(promedioSNR_Movil)]);
+    maxSteps = max([length(promedioSNR_Predefinido), length(promedioSNR_Fijo), length(promedioSNR_Movil), length(promedioSNR_Cen)]);
 
-    %Rellenar las matrices de datos con NaN para igualar la longitud en todas las simulaciones
-    for i = 1:num_autos
-        SNRs_Predefinido(:, i) = padWithNaN(SNRs_Predefinido(:, i), [maxSteps, 1]);
-        SNRs_Fijo(:, i) = padWithNaN(SNRs_Fijo(:, i), [maxSteps, 1]);
-        SNRs_Movil(:, i) = padWithNaN(SNRs_Movil(:, i), [maxSteps, 1]);
-
-        simThroughput_vehiculos_Predefinido{i} = padWithNaN(simThroughput_vehiculos_Predefinido{i}', [maxSteps, 1])';
-        simThroughput_vehiculos_Fijo{i} = padWithNaN(simThroughput_vehiculos_Fijo{i}', [maxSteps, 1])';
-        simThroughput_vehiculos_Movil{i} = padWithNaN(simThroughput_vehiculos_Movil{i}', [maxSteps, 1])';
-
-        maxThroughput_vehiculos_Predefinido{i} = padWithNaN(maxThroughput_vehiculos_Predefinido{i}', [maxSteps, 1])';
-        maxThroughput_vehiculos_Fijo{i} = padWithNaN(maxThroughput_vehiculos_Fijo{i}', [maxSteps, 1])';
-        maxThroughput_vehiculos_Movil{i} = padWithNaN(maxThroughput_vehiculos_Movil{i}', [maxSteps, 1])';
-    end
-
-    % Actualizar las longitudes de steps para las diferentes trayectorias
-    steps = (0:maxSteps)/10;
     % Figures:
     % Trajectories
     fsize = 10;
@@ -1044,150 +1352,35 @@ for iter = 1:num_iterations
     promedioThroughput_Movil = nanmean(simThroughput_vehiculos_Movil2, 2);
     promedioBler_Movil = nanmean(bler_movil2, 2);
 
+    simThroughput_vehiculos_Cen2 = cell2mat(simThroughput_vehiculos_Cen); % Convertir a matriz
+    bler_cen2 = cell2mat(bler_movil); % Convertir a matriz
+
+    % Calcular el promedio por fila ignorando NaN
+    promedioThroughput_Cen = nanmean(simThroughput_vehiculos_Cen2, 2);
+    promedioBler_Cen = nanmean(bler_cen2, 2);   
+
     % Pasar a Mbps
     promedioThroughput_Movil = 1e-6*promedioThroughput_Movil/(simParameters.NFrames*10e-3);
     promedioThroughput_Predefinido = 1e-6*promedioThroughput_Predefinido/(simParameters.NFrames*10e-3);
     promedioThroughput_Fijo = 1e-6*promedioThroughput_Fijo/(simParameters.NFrames*10e-3);
+    promedioThroughput_Cen = 1e-6*promedioThroughput_Cen/(simParameters.NFrames*10e-3);
 
     snr_all_iterations{iter,1} = promedioSNR_Movil;
     snr_all_iterations{iter,2} = promedioSNR_Predefinido;
     snr_all_iterations{iter,3} = promedioSNR_Fijo;
+    snr_all_iterations{iter,4} = promedioSNR_Cen;
 
     bler_all_iterations{iter,1} = promedioBler_Movil;
     bler_all_iterations{iter,2} = promedioBler_Predefinido;
     bler_all_iterations{iter,3} = promedioBler_Fijo;
+    bler_all_iterations{iter,4} = promedioBler_Cen;
 
     throughput_all_iterations{iter,1} = promedioThroughput_Movil;
     throughput_all_iterations{iter,2} = promedioThroughput_Predefinido;
     throughput_all_iterations{iter,3} = promedioThroughput_Fijo;
+    throughput_all_iterations{iter,4} = promedioThroughput_Cen;
 
 end
-
-% % Restar los valores del punto inicial
-% X_relative = pos3D_history_Movil(:,1) - 1010.7;
-% Y_relative = pos3D_history_Movil(:,2) - 767;
-% 
-% % Obtener trayectoria del vehículo 1 (puedes cambiar el índice si hay más)
-% veh_tray = pos3D_history_vehiculos{1};
-% X_veh = veh_tray(:,1) - 1010.7;
-% Y_veh = veh_tray(:,2) - 767;
-% 
-% % Crear la figura
-% figure;
-% hold on;
-% 
-% % Graficar toda la trayectoria con línea de guiones más gruesa
-% h1 = plot(X_relative, Y_relative, '--', 'Color', [0 0.4470 0.7410], 'LineWidth', 2);
-% 
-% % Marcar el punto inicial en verde sin coordenadas
-% h2 = plot(X_relative(1), Y_relative(1), 'o', 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'g', 'MarkerSize', 10);
-% 
-% % Marcar el punto final en rojo sin coordenadas
-% h3 = plot(X_relative(end), Y_relative(end), 'o', 'MarkerEdgeColor', 'k', 'MarkerFaceColor', 'r', 'MarkerSize', 10);
-% 
-% % Graficar trayectoria del vehículo en gris oscuro con línea sólida
-% h4 = plot(X_veh, Y_veh, '-', 'Color', [0.3 0.3 0.3], 'LineWidth', 1.5);
-% 
-% % Configuración del gráfico
-% %title('Trajectory of UAV1: Mobile');
-% xlabel('X [m]');
-% ylabel('Y [m]');
-% grid on;
-% axis equal;
-% 
-% % Agregar la leyenda
-% legend([h1 h2 h3 h4], {'Trajectory UAV1', 'Start', 'End', 'Vehicle trajectory'}, 'Location', 'best');
-% 
-% 
-% hold off;
-
-% % Restar los valores del punto inicial
-% X_relative = pos3D_history_Movil(:,1) - 1010.7;
-% Y_relative = pos3D_history_Movil(:,2) - 767;
-% 
-% % Obtener trayectoria del vehículo 1
-% veh_tray = pos3D_history_vehiculos{1};
-% X_veh = veh_tray(:,1) - 1010.7;
-% Y_veh = veh_tray(:,2) - 767;
-% 
-% % Crear la figura
-% figure;
-% hold on;
-% 
-% % Graficar trayectoria del UAV móvil
-% h1 = plot(X_relative, Y_relative, '--', 'Color', [0 0.4470 0.7410], 'LineWidth', 2);
-% 
-% % Graficar trayectoria del vehículo
-% h4 = plot(X_veh, Y_veh, '-', 'Color', [0.3 0.3 0.3], 'LineWidth', 1.5);
-% 
-% % Marcar punto inicial del UAV (azul)
-% plot(X_relative(1), Y_relative(1), '^', 'MarkerFaceColor', [0 0.4470 0.7410], ...
-%      'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-% 
-% % Marcar punto final del UAV (rojo)
-% plot(X_relative(end), Y_relative(end), 'v', 'MarkerFaceColor', [0 0.4470 0.7410], ...
-%      'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-% 
-% % Marcar punto inicial del vehículo (ocre)
-% plot(X_veh(1), Y_veh(1), 's', 'MarkerFaceColor', [0.85 0.44 0.00], ...
-%      'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-% 
-% % Marcar punto inicial del vehículo (ocre)
-% plot(X_veh(end), Y_veh(end), 's', 'MarkerFaceColor', [0.85 0.44 0.00], ...
-%      'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-% 
-% % Configuración del gráfico
-% xlabel('X [m]');
-% ylabel('Y [m]');
-% grid on;
-% axis equal;
-% 
-% % Agregar leyenda (sin los puntos individuales)
-% legend([h1 h4], {'Trajectory UAV1', 'Vehicle trajectory'}, 'Location', 'best');
-% 
-% hold off;
-
-% Restar los valores del punto inicial
-X_relative = pos3D_history_Movil(:,1) - 1010.7;
-Y_relative = pos3D_history_Movil(:,2) - 767;
-
-% Obtener trayectoria del vehículo 1
-veh_tray = pos3D_history_vehiculos{1};
-X_veh = veh_tray(:,1) - 1010.7;
-Y_veh = veh_tray(:,2) - 767;
-
-% Crear la figura
-figure;
-hold on;
-ocre = [0.85 0.33 0.10];
-% Graficar trayectoria del UAV móvil
-% Graficar trayectoria del vehículo
-h4 = plot(X_veh, Y_veh, '-', 'Color', ocre, 'LineWidth', 1.5);
-h1 = plot(X_relative, Y_relative, '--', 'Color', [0 0.4470 0.7410], 'LineWidth', 2);
-% Marcar inicio y fin del UAV
-plot(X_relative(1), Y_relative(1), '^', 'MarkerFaceColor', [0 0.4470 0.7410], 'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-plot(X_relative(end), Y_relative(end), 'v', 'MarkerFaceColor', [0 0.4470 0.7410], 'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-text(X_relative(1)+15, Y_relative(1), 'UAV Start', 'Color', [0 0.4470 0.7410], 'FontWeight', 'bold');
-text(X_relative(end)-120, Y_relative(end)+15, 'UAV End', 'Color', [0 0.4470 0.7410], 'FontWeight', 'bold');
-
-plot(X_veh(1), Y_veh(1), 's', 'MarkerFaceColor', ocre, 'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-plot(X_veh(end), Y_veh(end), 's', 'MarkerFaceColor', ocre, 'MarkerEdgeColor', 'k', 'MarkerSize', 8);
-text(X_veh(1)+15, Y_veh(1), 'Vehicle Start', 'Color', ocre, 'FontWeight', 'bold');
-text(X_veh(end)-150, Y_veh(end), 'Vehicle End', 'Color', ocre, 'FontWeight', 'bold');
-
-% Configuración del gráfico
-xlabel('X [m]');
-ylabel('Y [m]');
-grid on;
-axis equal;
-
-xlim([-280 420]);  % ← Ajusta estos valores según tus datos
-ylim([-310 150]);
-
-% Agregar leyenda solo para las trayectorias
-legend([h1 h4], {'Trajectory UAV1', 'Vehicle trajectory'}, 'Location', 'best');
-hold off;
-
 
 %% Limpieza de datos
 % --- Adaptar para SNRs ---
@@ -1195,6 +1388,7 @@ hold off;
 max_length_snr_movil = max(cellfun(@length, snr_all_iterations(:, 1)));
 max_length_snr_predefinido = max(cellfun(@length, snr_all_iterations(:, 2)));
 max_length_snr_fijo = max(cellfun(@length, snr_all_iterations(:, 3)));
+max_length_snr_cen = max(cellfun(@length, snr_all_iterations(:, 4)));
 
 % Rellenar con NaN y calcular el promedio ignorando NaN para SNRs
 padded_snr_movil = cellfun(@(x) [x NaN(1, max_length_snr_movil - length(x))], snr_all_iterations(:, 1), 'UniformOutput', false);
@@ -1206,11 +1400,15 @@ promedio_snr_predefinido = mean(cell2mat(padded_snr_predefinido), 1, 'omitnan');
 padded_snr_fijo = cellfun(@(x) [x NaN(1, max_length_snr_fijo - length(x))], snr_all_iterations(:, 3), 'UniformOutput', false);
 promedio_snr_fijo = mean(cell2mat(padded_snr_fijo), 1, 'omitnan');
 
+padded_snr_cen = cellfun(@(x) [x NaN(1, max_length_snr_cen - length(x))], snr_all_iterations(:, 4), 'UniformOutput', false);
+promedio_snr_cen = mean(cell2mat(padded_snr_cen), 1, 'omitnan');
+
 % --- Adaptar para BLER ---
 % Encontrar la longitud máxima de las filas en cada celda para BLER (convertir a vector fila)
 max_length_bler_movil = max(cellfun(@length, bler_all_iterations(:, 1)));
 max_length_bler_predefinido = max(cellfun(@length, bler_all_iterations(:, 2)));
 max_length_bler_fijo = max(cellfun(@length, bler_all_iterations(:, 3)));
+max_length_bler_cen = max(cellfun(@length, bler_all_iterations(:, 4)));
 
 % Convertir las celdas en vectores fila y rellenar con NaN
 padded_bler_movil = cellfun(@(x) [x(:).' NaN(1, max_length_bler_movil - length(x))], bler_all_iterations(:, 1), 'UniformOutput', false);
@@ -1222,11 +1420,15 @@ promedio_bler_predefinido = mean(cell2mat(padded_bler_predefinido), 1, 'omitnan'
 padded_bler_fijo = cellfun(@(x) [x(:).' NaN(1, max_length_bler_fijo - length(x))], bler_all_iterations(:, 3), 'UniformOutput', false);
 promedio_bler_fijo = mean(cell2mat(padded_bler_fijo), 1, 'omitnan');
 
+padded_bler_cen = cellfun(@(x) [x(:).' NaN(1, max_length_bler_cen - length(x))], bler_all_iterations(:, 4), 'UniformOutput', false);
+promedio_bler_cen = mean(cell2mat(padded_bler_cen), 1, 'omitnan');
+
 % --- Adaptar para Throughput ---
 % Encontrar la longitud máxima de las filas en cada celda para Throughput (convertir a vector fila)
 max_length_throughput_movil = max(cellfun(@length, throughput_all_iterations(:, 1)));
 max_length_throughput_predefinido = max(cellfun(@length, throughput_all_iterations(:, 2)));
 max_length_throughput_fijo = max(cellfun(@length, throughput_all_iterations(:, 3)));
+max_length_throughput_cen = max(cellfun(@length, throughput_all_iterations(:, 4)));
 
 % Convertir las celdas en vectores fila y rellenar con NaN
 padded_throughput_movil = cellfun(@(x) [x(:).' NaN(1, max_length_throughput_movil - length(x))], throughput_all_iterations(:, 1), 'UniformOutput', false);
@@ -1238,58 +1440,46 @@ promedio_throughput_predefinido = mean(cell2mat(padded_throughput_predefinido), 
 padded_throughput_fijo = cellfun(@(x) [x(:).' NaN(1, max_length_throughput_fijo - length(x))], throughput_all_iterations(:, 3), 'UniformOutput', false);
 promedio_throughput_fijo = mean(cell2mat(padded_throughput_fijo), 1, 'omitnan');
 
-steps = (0:maxSteps-1)/divisor;
+padded_throughput_cen = cellfun(@(x) [x(:).' NaN(1, max_length_throughput_cen - length(x))], throughput_all_iterations(:, 4), 'UniformOutput', false);
+promedio_throughput_cen = mean(cell2mat(padded_throughput_cen), 1, 'omitnan');
 
 
 %% SNR
-
 figure;
 hold on;
-plot(steps, promedio_snr_movil, 'o-', 'MarkerSize',7,'LineWidth',1, 'Color',[0 0.4470 0.7410]);
-plot(steps, promedio_snr_predefinido, 'o-', 'LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
-plot(steps, promedio_snr_fijo, 'o-','MarkerSize',7,'LineWidth', 1,'Color',[0.4660 0.6740 0.1880]);
+
+plot(1:length(promedio_snr_movil), promedio_snr_movil, 'o-','MarkerSize',7,'LineWidth',1,'Color',[0 0.4470 0.7410]);
+plot(1:length(promedio_snr_predefinido), promedio_snr_predefinido, 'o-','LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
+plot(1:length(promedio_snr_fijo), promedio_snr_fijo, 'o-','MarkerSize',7,'LineWidth',1,'Color',[0.4660 0.6740 0.1880]);
+plot(1:length(promedio_snr_cen), promedio_snr_cen, 'o-','MarkerSize',7,'LineWidth',1,'Color',[0.4940 0.1840 0.5560]);
+
 current_ylim = ylim;
-ylim([current_ylim(1), 16]); % Aumentar el límite superior en un 10%
+ylim([current_ylim(1), 14]); % Aumentar el límite superior en un 10%
 xlim([0,45])
+
 xlabel('Time (s)');
-ylabel('Average SNR (dB)');
+ylabel('SNR (dB)');
 
 grid on;
-legend('UAV1: mobile','UAV2: predefined','UAV3: static','Vehicle','Location','northeast');
-set(gca, 'FontSize', 12); % Cambia el tamaño de los números en los ejes
+legend('UAV1: proposed','UAV2: predefined','UAV3: static','UAV4: centroid','Location','northeast');
+set(gca,'FontSize',12);
+
 hold off;
-% figure;
-% hold on;
-% plot(promedio_snr_movil, promedio_bler_movil, '-o', 'MarkerSize',7,'LineWidth',1, 'Color',[0 0.4470 0.7410]);
-% % plot(promedio_snr_predefinido,promedio_bler_predefinido, '-o', 'LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
-% % plot(promedio_snr_fijo,promedio_bler_fijo, '-o','MarkerSize',7,'LineWidth', 1,'Color',[0.4660 0.6740 0.1880]);
-% current_ylim = ylim;
-% % ylim([current_ylim(1), current_ylim(2) * 1.25]); % Aumentar el límite superior en un 10%
-% % % xlim([0,46])
-% xlabel('Average SNR (dB)');
-% ylabel('Average Throughput (mbps)');
-% 
-% grid on;
-% legend('UAV1: mobile','UAV2: predefined','UAV3: static','Vehicle','Location','northeast');
-% hold off;
-
-
-
 %% Bler
 
 figure;
 hold on;
-plot(steps, promedio_bler_movil,'o-', 'MarkerSize',7,'LineWidth',1,'Color',[0 0.4470 0.7410]);
-plot(steps, promedio_bler_predefinido,'o-', 'LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
-plot(steps, promedio_bler_fijo, 'o-','MarkerSize',7,'LineWidth', 1,'Color',[0.4660 0.6740 0.1880]);
-
-ylim([0, 1]); % Aumentar el límite superior en un 10%
+plot(1:length(promedio_bler_movil), promedio_bler_movil,'o-','MarkerSize',7,'LineWidth',1,'Color',[0 0.4470 0.7410]);
+plot(1:length(promedio_bler_predefinido), promedio_bler_predefinido,'o-','LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
+plot(1:length(promedio_bler_fijo), promedio_bler_fijo,'o-','MarkerSize',7,'LineWidth',1,'Color',[0.4660 0.6740 0.1880]);
+plot(1:length(promedio_bler_cen), promedio_bler_cen,'o-','MarkerSize',7,'LineWidth',1,'Color',[0.4940 0.1840 0.5560]);
+ylim([0, 1]); 
 xlim([0,45])
 xlabel('Time (s)');
-ylabel('Average BLER');
+ylabel('BLER');
 grid on;
 
-legend('UAV1: mobile','UAV2: predefined','UAV3: static','Vehicle','Location','northeast');
+legend('UAV1: proposed','UAV2: predefined','UAV3: static','UAV4: centroid','Vehicle','Location','northeast');
 set(gca, 'FontSize', 12); % Cambia el tamaño de los números en los ejes
 hold off;
 
@@ -1297,16 +1487,17 @@ hold off;
 
 figure;
 hold on;
-plot(steps, promedio_throughput_movil,'o-', 'MarkerSize',7,'LineWidth',1,'Color',[0 0.4470 0.7410]);
-plot(steps, promedio_throughput_predefinido,'o-', 'LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
-plot(steps, promedio_throughput_fijo, 'o-','MarkerSize',7,'LineWidth', 1,'Color',[0.4660 0.6740 0.1880]);
+plot(1:length(promedio_throughput_movil), promedio_throughput_movil,'o-','MarkerSize',7,'LineWidth',1,'Color',[0 0.4470 0.7410]);
+plot(1:length(promedio_throughput_predefinido), promedio_throughput_predefinido,'o-','LineWidth',1,'Color',[0.8500 0.3250 0.0980]);
+plot(1:length(promedio_throughput_fijo), promedio_throughput_fijo,'o-','MarkerSize',7,'LineWidth',1,'Color',[0.4660 0.6740 0.1880]);
+plot(1:length(promedio_throughput_cen), promedio_throughput_cen,'o-','MarkerSize',7,'LineWidth',1,'Color',[0.4940 0.1840 0.5560]);
 current_ylim = ylim;
-ylim([0, 35]); % Aumentar el límite superior en un 10%
+ylim([0, 80]); % Aumentar el límite superior en un 10%
 xlim([0,45])
 xlabel('Time (s)');
-ylabel('Average Throughput (Mbps)');
+ylabel('Throughput (Mbps)');
 grid on;
-legend('UAV1: mobile','UAV2: predefined','UAV3: static','Vehicle','Location','northeast');
+legend('UAV1: proposed','UAV2: predefined','UAV3: static','UAV4: centroid','Vehicle','Location','northeast');
 set(gca, 'FontSize', 12); % Cambia el tamaño de los números en los ejes
 hold off;
 
