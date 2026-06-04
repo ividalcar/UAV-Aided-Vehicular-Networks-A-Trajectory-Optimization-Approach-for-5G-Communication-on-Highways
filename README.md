@@ -1,9 +1,5 @@
 # UAV-Aided Vehicular Networks: A Trajectory Optimization Approach for 5G Communication on Highways
 
-IEEE Latin America Transactions  
-
-Manuscript ID:
-
 **Authors**
 - Ignacio Vidal  
 - Sandy Bolufé  
